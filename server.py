@@ -21,7 +21,10 @@ SHEET_NAME = "SaveCash_Test"
 LOG_FILE = "logs/post_logs.csv"
 
 # Google Sheets setup
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+scope = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive"
+]
 credentials = ServiceAccountCredentials.from_json_keyfile_dict(SERVICE_ACCOUNT_INFO, scope)
 client = gspread.authorize(credentials)
 sheet = client.open(SHEET_NAME).sheet1
@@ -33,7 +36,6 @@ def home():
 @app.route("/post-next", methods=["POST"])
 def post_next():
     try:
-        # Fetch all rows
         rows = sheet.get_all_records()
         
         # Find the first pending post
@@ -47,8 +49,8 @@ def post_next():
             return jsonify({"success": False, "message": "No pending posts found"})
 
         row_number, post = next_post
-        platform = post.get("platform").lower()
-        content = post.get("content")
+        platform = post.get("platform", "").lower()
+        content = post.get("content", "")
         media_url = post.get("media_url", None)
 
         # Post to the appropriate platform
@@ -64,9 +66,11 @@ def post_next():
             message = f"Unknown platform: {platform}"
 
         # Update Google Sheet status
-        sheet.update_cell(row_number, sheet.find("status").col, "posted" if success else "failed")
+        status_col = sheet.find("status").col
+        sheet.update_cell(row_number, status_col, "posted" if success else "failed")
 
         # Log the post
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
         with open(LOG_FILE, "a", newline="") as f:
             writer = csv.writer(f)
             writer.writerow([datetime.utcnow().isoformat(), platform, content, success, message])
