@@ -1,40 +1,17 @@
 from flask import Flask, jsonify
-import gspread
-import json
-import os
-import csv
-import time
-import requests
+import gspread, json, os, csv, requests, time
 from threading import Thread
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
-
-# Platform posting functions
+from ai_content_generator import generate_post
+from ai_media_generator import generate_image
 from platform_modules.instagram_poster import post_instagram
 from platform_modules.threads_poster import post_threads
 from platform_modules.x_twitter_semi_auto.approval_listener import post_x_twitter
 
-# AI content generation
-import openai
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-def generate_post(platform, topic, tone="professional"):
-    prompt = f"""
-    Write a {tone} social media post about "{topic}" for {platform}.
-    Include hashtags if applicable. Keep it short and engaging.
-    """
-    response = openai.Completion.create(
-        model="gpt-4",
-        prompt=prompt,
-        temperature=0.7,
-        max_tokens=150
-    )
-    return response.choices[0].text.strip()
-
-# Flask app
 app = Flask(__name__)
 
-# Load Google service account
+# --- Google Sheets Setup ---
 GOOGLE_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
 SERVICE_ACCOUNT_INFO = json.loads(GOOGLE_JSON)
 SHEET_NAME = "SaveCash_Test"
@@ -45,24 +22,26 @@ credentials = ServiceAccountCredentials.from_json_keyfile_dict(SERVICE_ACCOUNT_I
 client = gspread.authorize(credentials)
 sheet = client.open(SHEET_NAME).sheet1
 
+# --- Home Endpoint ---
 @app.route("/")
 def home():
     return jsonify({"status": "SaveCash AI Marketing API is running"})
 
+# --- Generate AI Content + Media ---
 @app.route("/generate-next", methods=["POST"])
 def generate_next():
     try:
         topic = "SaveCash AI Marketing Automation"
         platforms = ["Instagram", "Threads", "X"]
-
         for platform in platforms:
             content = generate_post(platform, topic)
-            sheet.append_row([platform, content, "", "pending", 0])  # Add retry_count column
-
-        return jsonify({"success": True, "message": "AI posts generated and added"})
+            media_url = generate_image(f"Professional marketing visual for {topic} on {platform}")
+            sheet.append_row([platform, content, media_url, "pending", 0])
+        return jsonify({"success": True, "message": "AI posts + media generated and added"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
+# --- Post Next Pending ---
 @app.route("/post-next", methods=["POST"])
 def post_next():
     try:
@@ -70,7 +49,7 @@ def post_next():
         next_post = None
         for idx, row in enumerate(rows):
             if row.get("status", "").lower() in ["", "pending"]:
-                next_post = (idx + 2, row)  # +2 because sheet rows start at 1 and header row
+                next_post = (idx + 2, row)
                 break
 
         if not next_post:
@@ -79,7 +58,7 @@ def post_next():
         row_number, post = next_post
         platform = post.get("platform").lower()
         content = post.get("content")
-        media_url = post.get("media_url", None)
+        media_url = post.get("media_url")
         retry_count = int(post.get("retry_count", 0))
 
         success = False
@@ -93,24 +72,23 @@ def post_next():
         else:
             message = f"Unknown platform: {platform}"
 
-        # Retry logic
+        # Retry Logic
         if not success and retry_count < 3:
             retry_count += 1
             sheet.update_cell(row_number, sheet.find("retry_count").col, retry_count)
         else:
             sheet.update_cell(row_number, sheet.find("status").col, "posted" if success else "failed")
 
-        # Log the post
+        # Logging
         with open(LOG_FILE, "a", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow([datetime.utcnow().isoformat(), platform, content, success, message, retry_count])
+            writer.writerow([datetime.utcnow().isoformat(), platform, content, media_url, success, message, retry_count])
 
         return jsonify({"success": success, "message": message})
-
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
-# Auto-post loop
+# --- Auto-Posting Loop ---
 def auto_post_loop(interval=3600):
     while True:
         try:
@@ -123,4 +101,5 @@ Thread(target=auto_post_loop, daemon=True).start()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
 
