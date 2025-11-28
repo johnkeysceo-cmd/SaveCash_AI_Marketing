@@ -6,7 +6,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 app = Flask(__name__)
 
-# Load service account from environment variable
+# Load service account JSON from Render environment variable
 GOOGLE_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
 SERVICE_ACCOUNT_INFO = json.loads(GOOGLE_JSON)
 
@@ -42,3 +42,4 @@ def test_google():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
