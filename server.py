@@ -1,11 +1,17 @@
-from flask import Flask, jsonify
+ from flask import Flask, jsonify
 import gspread
+import json
+import os
 from oauth2client.service_account import ServiceAccountCredentials
 
 app = Flask(__name__)
 
-SERVICE_ACCOUNT_FILE = "service_account/savecash-service.json"
+# Load service account from environment variable
+GOOGLE_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+SERVICE_ACCOUNT_INFO = json.loads(GOOGLE_JSON)
+
 SHEET_NAME = "SaveCash_Test"
+
 
 @app.route("/")
 def home():
@@ -15,11 +21,13 @@ def home():
 @app.route("/test-google", methods=["GET"])
 def test_google():
     try:
-        scope = ["https://spreadsheets.google.com/feeds",
-                 "https://www.googleapis.com/auth/drive"]
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/drive"
+        ]
 
-        credentials = ServiceAccountCredentials.from_json_keyfile_name(
-            SERVICE_ACCOUNT_FILE, scope
+        credentials = ServiceAccountCredentials.from_json_keyfile_dict(
+            SERVICE_ACCOUNT_INFO, scope
         )
         client = gspread.authorize(credentials)
         sheet = client.open(SHEET_NAME).sheet1
@@ -30,6 +38,7 @@ def test_google():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
